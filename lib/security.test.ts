@@ -121,6 +121,11 @@ describe("настройки окружения", () => {
     assert.equal(resolveAuthConfig({ MENTOR_PASSWORD: "p" }).mode, "password");
     assert.equal(resolveAuthConfig({ NODE_ENV: "development" }).mode, "open");
     assert.equal(resolveAuthConfig({ NODE_ENV: "production" }).mode, "misconfigured");
+    // Открытый стенд для проверяющих — только явно и даже при заданном пароле
+    assert.deepEqual(resolveAuthConfig({ NODE_ENV: "production", PUBLIC_DEMO: "true" }), { mode: "open", publicDemo: true });
+    assert.deepEqual(resolveAuthConfig({ MENTOR_PASSWORD: "p", PUBLIC_DEMO: " TRUE " }), { mode: "open", publicDemo: true });
+    assert.equal(resolveAuthConfig({ NODE_ENV: "production", PUBLIC_DEMO: "1" }).mode, "misconfigured");
+    assert.equal(resolveAuthConfig({ MENTOR_PASSWORD: "p", PUBLIC_DEMO: "false" }).mode, "password");
     const a = resolveAuthConfig({ MENTOR_PASSWORD: "p1" });
     const b = resolveAuthConfig({ MENTOR_PASSWORD: "p2" });
     assert.ok(a.mode === "password" && b.mode === "password" && a.secret !== b.secret, "смена пароля меняет подпись");

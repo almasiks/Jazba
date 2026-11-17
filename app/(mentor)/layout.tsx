@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DemoBadge } from "@/components/demo-badge";
 import { Logo } from "@/components/logo";
 import { MentorNav } from "@/components/mentor-nav";
+import { PublicDemoBanner } from "@/components/public-demo-banner";
 import { Button } from "@/components/ui/button";
 import { resolveAuthConfig } from "@/lib/config";
 import { isMockMode } from "@/lib/mock";
@@ -16,8 +17,10 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
  * У редактора своя шапка — он в группе (editor). Страница студента — отдельно (/s/...).
  */
 export default function MentorLayout({ children }: LayoutProps<"/">) {
+  const auth = resolveAuthConfig(process.env);
   return (
     <>
+      {auth.mode === "open" && auth.publicDemo && <PublicDemoBanner />}
       <header className="border-b-2 border-border bg-card print:hidden">
         <div className="mx-auto flex w-full max-w-[1200px] flex-wrap items-center justify-between gap-4 px-6 py-3.5">
           <Link href="/" aria-label="Jazba — на главную" className="rounded-xl">
@@ -26,7 +29,7 @@ export default function MentorLayout({ children }: LayoutProps<"/">) {
           <nav className="flex flex-wrap items-center gap-2">
             <MentorNav />
             {isMockMode() && <DemoBadge />}
-            {resolveAuthConfig(process.env).mode === "password" && (
+            {auth.mode === "password" && (
               <form method="post" action="/api/logout">
                 <Button type="submit" variant="ghost" className="text-muted-foreground">
                   <LogOut data-icon="inline-start" />
