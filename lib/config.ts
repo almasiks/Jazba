@@ -45,10 +45,11 @@ export function resolveSupabaseConfig(env: Env): { url: string; serviceRoleKey: 
 
 export type AuthConfig =
   | { mode: "password"; password: string; secret: string }
-  | { mode: "open" } // для локальной разработки без пароля
+  | { mode: "open"; publicDemo?: boolean } // локальная разработка без пароля или открытый демо-стенд
   | { mode: "misconfigured" }; // продакшен без пароля — ментору никуда нельзя
 
 /**
+ * PUBLIC_DEMO=true — открытый демо-стенд: страницы ментора доступны без пароля (важнее MENTOR_PASSWORD).
  * MENTOR_PASSWORD включает вход по паролю. Без него:
  *  - при разработке (NODE_ENV !== production) страницы ментора открыты;
  *  - в продакшене — закрыты совсем, пока пароль не задан.
@@ -56,6 +57,9 @@ export type AuthConfig =
  * по умолчанию подпись выводится из пароля, и смена пароля разлогинивает всех.
  */
 export function resolveAuthConfig(env: Env): AuthConfig {
+  // PUBLIC_DEMO=true — открытый стенд для проверяющих конкурса: вход без пароля
+  // (в материалах для проверки не должно быть паролей). Включается только явно.
+  if (env.PUBLIC_DEMO?.trim().toLowerCase() === "true") return { mode: "open", publicDemo: true };
   const password = env.MENTOR_PASSWORD;
   if (password) return { mode: "password", password, secret: env.SESSION_SECRET || `jazba:${password}` };
   return env.NODE_ENV === "production" ? { mode: "misconfigured" } : { mode: "open" };
