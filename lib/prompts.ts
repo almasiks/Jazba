@@ -76,6 +76,24 @@ ${items.join("\n")}`;
   return buildPrompt(language, hasTimestamps, task);
 }
 
+/** Промпт для части материалов, когда они готовятся несколькими параллельными запросами. */
+export function buildGroupSystemPrompt(
+  blocks: readonly BlockKey[],
+  withTitle: boolean,
+  language: Language,
+  hasTimestamps: boolean,
+): string {
+  const lang = LANGUAGE_NAMES[language];
+  const items = [
+    ...(withTitle ? ["title — короткая тема занятия."] : []),
+    ...blocks.map((key) => BLOCK_INSTRUCTIONS[key](lang)),
+  ].map((item, i) => `${i + 1}. ${item}`);
+  const task = `## Что подготовить
+Только перечисленное ниже — остальные материалы занятия готовятся отдельно.
+${items.join("\n")}`;
+  return buildPrompt(language, hasTimestamps, task);
+}
+
 /** Промпт для перегенерации одного блока: остальные материалы ментор уже отредактировал. */
 export function buildBlockSystemPrompt(
   block: BlockKey,

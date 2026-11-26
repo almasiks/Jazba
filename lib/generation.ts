@@ -3,10 +3,15 @@
  * В демо-режиме (см. lib/mock.ts) ИИ не вызывается.
  */
 import { zodResponseFormat, zodTextFormat } from "openai/helpers/zod";
-import type { z } from "zod";
+import { z } from "zod";
 import { isMockMode, loadMockMaterials } from "./mock.ts";
-import { getAiClient, withDeadline } from "./openai.ts";
-import { buildBlockSystemPrompt, buildMaterialsSystemPrompt, buildMaterialsUserPrompt } from "./prompts.ts";
+import { getAiClient, getAiConfig, withDeadline } from "./openai.ts";
+import {
+  buildBlockSystemPrompt,
+  buildGroupSystemPrompt,
+  buildMaterialsSystemPrompt,
+  buildMaterialsUserPrompt,
+} from "./prompts.ts";
 import {
   BlockResponseSchemas,
   MaterialsResponseSchema,
@@ -15,6 +20,7 @@ import {
   type BlockKey,
   type Language,
   type Materials,
+  type MaterialsResponse,
 } from "./schema.ts";
 import { extractTimecodes } from "./timecode.ts";
 
@@ -67,6 +73,34 @@ async function requestStructured<T extends z.ZodType>(
   return response.output_parsed as z.infer<T>;
 }
 
+/**
+ * Gemini пишет все материалы одним ответом около двух минут, поэтому для него они делятся
+ * на три параллельных запроса. Три, а не по блоку: у бесплатного тарифа мало запросов в минуту.
+ */
+async function requestInParts(transcript: string, language: Language, hasTimestamps: boolean) {
+  const input = buildMaterialsUserPrompt(transcript);
+  const { shape } = MaterialsResponseSchema;
+  const prompt = (blocks: BlockKey[], withTitle = false) =>
+    buildGroupSystemPrompt(blocks, withTitle, language, hasTimestamps);
+
+  const [main, quiz, practice] = await Promise.all([
+    requestStructured(
+      z.object({ title: shape.title, summary: shape.summary, glossary: shape.glossary }),
+      "summary_glossary",
+      prompt(["summary", "glossary"], true),
+      input,
+    ),
+    requestStructured(BlockResponseSchemas.quiz, "quiz", prompt(["quiz"]), input),
+    requestStructured(
+      z.object({ homework: shape.homework, faq: shape.faq }),
+      "homework_faq",
+      prompt(["homework", "faq"]),
+      input,
+    ),
+  ]);
+  return { ...main, ...quiz, ...practice } satisfies MaterialsResponse;
+}
+
 export async function generateMaterials(
   transcript: string,
   language: Language,
@@ -78,12 +112,15 @@ export async function generateMaterials(
 
   // Таймкоды, которые реально есть в транскрипте — по ним проверяем ответ модели
   const marks = extractTimecodes(transcript);
-  const parsed = await requestStructured(
-    MaterialsResponseSchema,
-    "materials",
-    buildMaterialsSystemPrompt(language, marks.length > 0),
-    buildMaterialsUserPrompt(transcript),
-  );
+  const parsed =
+    getAiConfig().provider === "gemini"
+      ? await requestInParts(transcript, language, marks.length > 0)
+      : await requestStructured(
+          MaterialsResponseSchema,
+          "materials",
+          buildMaterialsSystemPrompt(language, marks.length > 0),
+          buildMaterialsUserPrompt(transcript),
+        );
   return { materials: normalizeMaterials(parsed, marks), mock: false };
 }
 
