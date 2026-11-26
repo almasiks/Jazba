@@ -123,7 +123,7 @@ export function TranscriptForm(props: Props) {
         </Button>
         <p className="text-center text-sm font-semibold text-muted-foreground" aria-live="polite">
           {loading
-            ? "Обычно это занимает от 30 секунд до пары минут."
+            ? "Обычно это занимает 1–2 минуты. Не закрывайте страницу."
             : "Это черновик: вы проверите всё в редакторе перед публикацией"}
         </p>
       </div>
