@@ -5,7 +5,7 @@ import OpenAI from "openai";
 import { ContentFilterFinishReasonError, LengthFinishReasonError } from "openai/error";
 import { EmptyModelResponseError } from "./generation.ts";
 import { resolveAiConfig, type AiConfig } from "./config.ts";
-import { ConfigError, PROVIDER_NAMES } from "./openai.ts";
+import { AiTimeoutError, ConfigError, PROVIDER_NAMES } from "./openai.ts";
 import { SupabaseStorageError } from "./storage-supabase.ts";
 import type { ApiError } from "./schema.ts";
 
@@ -60,6 +60,11 @@ export function generationErrorResponse(error: unknown) {
   if (error instanceof OpenAI.NotFoundError) {
     console.error(`[generate] ${name} 404:`, error.message);
     return fail(`Модель "${ai.model}" не найдена в ${name} или недоступна для этого ключа. Проверьте AI_MODEL.`, 500);
+  }
+  // APIConnectionTimeoutError — частный случай APIConnectionError, поэтому проверяется раньше
+  if (error instanceof AiTimeoutError || error instanceof OpenAI.APIConnectionTimeoutError) {
+    console.error(`[generate] ${name}: таймаут`);
+    return fail("Модель отвечает слишком долго, попробуйте ещё раз.", 503);
   }
   if (error instanceof OpenAI.APIConnectionError) {
     return fail(`Не удалось связаться с ${name}. Проверьте интернет-соединение.`, 502);

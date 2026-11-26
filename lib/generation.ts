@@ -5,7 +5,7 @@
 import { zodResponseFormat, zodTextFormat } from "openai/helpers/zod";
 import type { z } from "zod";
 import { isMockMode, loadMockMaterials } from "./mock.ts";
-import { getAiClient } from "./openai.ts";
+import { getAiClient, withDeadline } from "./openai.ts";
 import { buildBlockSystemPrompt, buildMaterialsSystemPrompt, buildMaterialsUserPrompt } from "./prompts.ts";
 import {
   BlockResponseSchemas,
@@ -36,25 +36,33 @@ async function requestStructured<T extends z.ZodType>(
   const { client, config } = getAiClient();
 
   if (config.provider !== "openai") {
-    const completion = await client.chat.completions.parse({
-      model: config.model,
-      messages: [
-        { role: "system", content: instructions },
-        { role: "user", content: input },
-      ],
-      response_format: zodResponseFormat(schema, name),
-    });
+    const completion = await withDeadline((signal) =>
+      client.chat.completions.parse(
+        {
+          model: config.model,
+          messages: [
+            { role: "system", content: instructions },
+            { role: "user", content: input },
+          ],
+          response_format: zodResponseFormat(schema, name),
+          // Gemini по умолчанию долго «думает» и не укладывается во время функции.
+          // low — минимум, который принимает gemini-3.8-flash (minimal у него — ошибка).
+          ...(config.provider === "gemini" ? { reasoning_effort: "low" as const } : {}),
+        },
+        { signal },
+      ),
+    );
     const parsed = completion.choices[0]?.message.parsed;
     if (!parsed) throw new EmptyModelResponseError();
     return parsed as z.infer<T>;
   }
 
-  const response = await client.responses.parse({
-    model: config.model,
-    instructions,
-    input,
-    text: { format: zodTextFormat(schema, name) },
-  });
+  const response = await withDeadline((signal) =>
+    client.responses.parse(
+      { model: config.model, instructions, input, text: { format: zodTextFormat(schema, name) } },
+      { signal },
+    ),
+  );
   if (!response.output_parsed) throw new EmptyModelResponseError();
   return response.output_parsed as z.infer<T>;
 }
