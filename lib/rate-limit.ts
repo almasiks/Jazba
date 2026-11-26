@@ -3,9 +3,13 @@
  * Реализации: в памяти (разработка) и в Supabase (общая для всех экземпляров на Vercel).
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { SupabaseStorageError } from "./storage-supabase.ts";
+
+export const RATE_LIMIT_DB_ERROR =
+  "Не удалось проверить лимит генераций: ошибка базы данных. Проверьте, что применены миграции Supabase и верны SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY";
 
 export interface RateLimiter {
-  /** true — запрос разрешён и учтён; false — лимит исчерпан. */
+  /** true — запрос разрешён и учтён; false — лимит исчерпан. Не удалось проверить — исключение. */
   consume(key: string, limit: number, windowSeconds: number): Promise<boolean>;
 }
 
@@ -44,9 +48,9 @@ export class SupabaseRateLimiter implements RateLimiter {
       p_window_seconds: windowSeconds,
     });
     if (error) {
-      // Лучше отказать, чем молча тратить баланс OpenAI без лимита
+      // Лучше отказать, чем молча тратить баланс OpenAI без лимита, — но назвать настоящую причину
       console.error("[rate-limit] Supabase:", error.message);
-      return false;
+      throw new SupabaseStorageError(RATE_LIMIT_DB_ERROR);
     }
     return data === true;
   }

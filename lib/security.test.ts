@@ -1,6 +1,7 @@
 // Вход ментора, правила доступа, настройки окружения, ограничение частоты
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it, mock } from "node:test";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { decideAccess } from "./access-rules.ts";
 import {
   checkPassword,
@@ -11,7 +12,8 @@ import {
   verifySessionToken,
 } from "./auth.ts";
 import { ConfigError, resolveAuthConfig, resolveRateLimits, resolveStorageKind, resolveSupabaseConfig } from "./config.ts";
-import { checkGenerationLimit, MemoryRateLimiter } from "./rate-limit.ts";
+import { checkGenerationLimit, MemoryRateLimiter, RATE_LIMIT_DB_ERROR, SupabaseRateLimiter } from "./rate-limit.ts";
+import { SupabaseStorageError } from "./storage-supabase.ts";
 
 const EDIT_ID = "Ab-_".repeat(8); // 32 символа
 const SLUG = "abcde12345";
@@ -169,5 +171,29 @@ describe("ограничение частоты", () => {
     const hourly = await checkGenerationLimit(limiter, "3.3.3.3", limits);
     assert.equal(hourly.ok, false, "общий лимит 4 в час исчерпан");
     assert.match(!hourly.ok ? hourly.message : "", /4 в час/);
+  });
+});
+
+describe("лимит в Supabase", () => {
+  const limiterWith = (result: { data: unknown; error: { message: string } | null }) =>
+    new SupabaseRateLimiter({ rpc: async () => result } as unknown as SupabaseClient);
+  const limits = { perHour: 30, perMinute: 3 };
+
+  it("ошибка RPC → понятная ошибка базы, а не «слишком много запросов»", async () => {
+    const log = mock.method(console, "error", () => {});
+    const limiter = limiterWith({ data: null, error: { message: "TypeError: fetch failed" } });
+    await assert.rejects(checkGenerationLimit(limiter, "1.1.1.1", limits), (error) => {
+      assert.ok(error instanceof SupabaseStorageError);
+      assert.equal(error.message, RATE_LIMIT_DB_ERROR);
+      return true;
+    });
+    assert.deepEqual(log.mock.calls[0].arguments, ["[rate-limit] Supabase:", "TypeError: fetch failed"]);
+    log.mock.restore();
+  });
+
+  it("без ошибки: true пропускает, false — это исчерпанный лимит", async () => {
+    assert.equal((await checkGenerationLimit(limiterWith({ data: true, error: null }), "1.1.1.1", limits)).ok, true);
+    const denied = await checkGenerationLimit(limiterWith({ data: false, error: null }), "1.1.1.1", limits);
+    assert.match(!denied.ok ? denied.message : "", /Слишком много запросов/);
   });
 });

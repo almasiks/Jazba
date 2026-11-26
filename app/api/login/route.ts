@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { checkPassword, createSessionToken, safeNextPath, SESSION_COOKIE, SESSION_TTL_MS } from "@/lib/auth";
 import { resolveAuthConfig } from "@/lib/config";
 import { clientIp, getRateLimiter } from "@/lib/server/guard";
+import { SupabaseStorageError } from "@/lib/storage-supabase";
 
 const LOGIN_ATTEMPTS = 10; // попыток входа с одного IP
 const LOGIN_WINDOW_SECONDS = 15 * 60;
@@ -20,8 +21,14 @@ export async function POST(request: Request) {
   if (auth.mode === "misconfigured") return back("config");
 
   // Защита от перебора пароля
-  if (!(await getRateLimiter().consume(`login:${clientIp(request)}`, LOGIN_ATTEMPTS, LOGIN_WINDOW_SECONDS))) {
-    return back("rate");
+  // Если проверить лимит нельзя (база недоступна), тоже не пускаем
+  try {
+    if (!(await getRateLimiter().consume(`login:${clientIp(request)}`, LOGIN_ATTEMPTS, LOGIN_WINDOW_SECONDS))) {
+      return back("rate");
+    }
+  } catch (error) {
+    if (error instanceof SupabaseStorageError) return back("database");
+    throw error;
   }
   if (!(await checkPassword(password, auth.password))) return back("password");
 
